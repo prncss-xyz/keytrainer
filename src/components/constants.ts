@@ -1,0 +1,10 @@
+export const deprec = 10;
+export const deprecFrecency = 5;
+export const countThreshold = 4;
+export const ratioThreshold = 0.95;
+export const charactersBefore = 3;
+export const maxChartersDisplayed = 7;
+export const errFact = 1.05;
+export const quick = 500;
+export const succFact = 0.98;
+export const maxDelay = 10000;

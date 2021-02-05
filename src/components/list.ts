@@ -1,14 +1,23 @@
-import { useReducer, useEffect } from 'react';
+// TODO: add error to mistaken character
+// TODO: confusion matrix
+// TODO: change theme with new letter
+// TODO: animation
+// TODO: ? refactor algorithm as object
 
-const deprec = 10;
-const deprecFrecency = 2.5;
-const countThreshold = 4;
-const ratioThreshold = 0.95;
+import { useReducer, useEffect } from 'react';
+import {
+  deprec,
+  deprecFrecency,
+  countThreshold,
+  ratioThreshold,
+  errFact,
+  quick,
+  succFact,
+  maxDelay,
+} from './constants';
+
 const charactersBefore = 3;
-const maxChartersDisplayed = 7;
-const errFact = 1.6;
-const quick = 500;
-const succFact = 0.8;
+const maxChartersDisplayed = 2 * charactersBefore + 1;
 
 const factor = Math.LN2 / deprec;
 const factorFrecency = Math.LN2 / deprecFrecency;
@@ -29,11 +38,7 @@ interface PreTarget {
   firstTime: boolean;
 }
 
-interface EaseMatrix {
-  [character: string]: number;
-}
-
-interface FrecencyMatrix {
+interface CharMatrix {
   [character: string]: number;
 }
 
@@ -56,8 +61,10 @@ interface State {
   delay1: number;
   delay2: number;
   lastChar: string;
-  easeMatrix: EaseMatrix;
-  frecencyMatrix: FrecencyMatrix;
+  activeChars: string;
+  easeMatrix: CharMatrix;
+  frecencyMatrix: CharMatrix;
+  probMatrix: CharMatrix; // debugging purpose only
 }
 
 export const press = (key: string, timeStamp: number) =>
@@ -72,7 +79,7 @@ function newTarget(state: State, target: PreTarget): State {
   const increment = Math.exp(factorFrecency * state.count);
   const frecency = state.frecencyMatrix[target.value] + increment;
   const frecencyMatrix = { ...state.frecencyMatrix, [target.value]: frecency };
-  if (targets.length === maxChartersDisplayed) {
+  if (targets.length > maxChartersDisplayed) {
     position -= 1;
     targets = targets.slice(1);
   }
@@ -92,6 +99,7 @@ function newCharacter(state: State): State {
   return newTarget(
     {
       ...state,
+      activeChars: state.activeChars + head,
       lastChar: head,
       easeMatrix: { ...state.easeMatrix, [head]: total / 2 },
       frecencyMatrix: { ...state.frecencyMatrix, [head]: 0 },
@@ -112,12 +120,14 @@ function reducer(state: State, action: Action): State {
       if (!target) return state;
       const increment = Math.exp(factor * target.index);
       const stateOut = { ...state };
+      stateOut.probMatrix = calcProb(state);
       stateOut.lastPressTime = action.timeStamp;
       stateOut.erroneous = state.targets[state.position].value !== action.key;
       if (!stateOut.erroneous) stateOut.position += 1;
 
       if (!state.erroneous && state.lastPressTime) {
         const delay = action.timeStamp - state.lastPressTime;
+        if (delay > maxDelay) return stateOut;
         stateOut.delay0 += increment;
         stateOut.delay1 += increment * delay;
         stateOut.delay2 += increment * delay * delay;
@@ -134,6 +144,12 @@ function reducer(state: State, action: Action): State {
         const len = Object.values(state.easeMatrix).length;
         Math.min(ease, 0.8 * total);
         Math.max(ease, (0.1 / len) * total);
+        if (
+          target.value === state.lastChar &&
+          state.countGood < countThreshold
+        ) {
+          ease = total / 4;
+        }
         // ease = Math.max(ease, total * 0.01);
         // entry cannot exceed 50% frequency
         // ease = Math.min(ease, total - state.easeMatrix[action.key]);
@@ -150,10 +166,12 @@ function reducer(state: State, action: Action): State {
         stateOut.cumulGood = state.cumulGood + increment;
         if (target.value === state.lastChar)
           stateOut.countGood = state.countGood + 1;
+        const succRatio =
+          stateOut.cumulGood / (stateOut.cumulGood + stateOut.cumulBad);
         if (
-          stateOut.countGood > countThreshold &&
-          stateOut.cumulGood / (stateOut.cumulGood + stateOut.cumulBad) >
-            ratioThreshold
+          (succRatio > ratioThreshold && stateOut.countGood > countThreshold) ||
+          (succRatio > 0.98 && stateOut.countGood > 3) ||
+          (succRatio > 0.99 && stateOut.countGood > 2)
         ) {
           return newCharacter(stateOut);
         }
@@ -170,8 +188,9 @@ function reducer(state: State, action: Action): State {
 }
 
 function newTargetValue(state: State) {
+  const last = state.targets[state.targets.length - 1]?.value;
   const weight = (key: string) =>
-    state.easeMatrix[key] / state.frecencyMatrix[key];
+    key === last ? 0 : state.easeMatrix[key] / state.frecencyMatrix[key];
   const total = Object.keys(state.easeMatrix)
     .map(key => weight(key))
     .reduce((a, b) => a + b, 0);
@@ -184,6 +203,19 @@ function newTargetValue(state: State) {
     if (cumul >= pick) break;
   }
   return character!;
+}
+
+function calcProb(state: State): CharMatrix {
+  const weight = (key: string) =>
+    state.easeMatrix[key] / state.frecencyMatrix[key];
+  const total = Object.keys(state.easeMatrix)
+    .map(key => weight(key))
+    .reduce((a, b) => a + b, 0);
+  const probs: CharMatrix = {};
+  for (const key of Object.keys(state.easeMatrix)) {
+    probs[key] = weight(key) / total;
+  }
+  return probs;
 }
 
 export default function useList(characters: string) {
@@ -201,6 +233,7 @@ export default function useList(characters: string) {
     delay0: 0,
     delay1: 0,
     delay2: 0,
+    activeChars: characters.slice(0, 2),
     lastChar: characters[1],
     easeMatrix: {
       [characters[0]]: 0.5,
@@ -210,6 +243,7 @@ export default function useList(characters: string) {
       [characters[0]]: 1,
       [characters[1]]: 1,
     },
+    probMatrix: {},
   };
 
   const [state, dispatch] = useReducer(reducer, state0);

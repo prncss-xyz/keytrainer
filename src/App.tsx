@@ -1,89 +1,165 @@
 /** @jsxImportSource @emotion/react */
 
 import useList from './components/list';
+import { ratioThreshold } from './components/constants';
+import { useTheme, Global } from '@emotion/react';
+import { TransitionGroup, CSSTransition } from 'react-transition-group';
+
+const characters = 'etisuranovpdzlbjkmxhywf';
+
+function Pads({ amount }: { amount: number }) {
+  const res = [];
+  for (let i = 0; i < amount; ++i)
+    res.push(<div key={i} css={{ width: '50px' }}></div>);
+  return <>{res}</>;
+}
 
 function TypeZone() {
-  const [state] = useList('etisuranovpdzlbjkmxhyhwf');
+  const theme = useTheme() as any;
 
-  const errorRatio = state.cumulGood / (state.cumulGood + state.cumulBad);
+  const [state] = useList(characters);
+
+  const errorRatio = state.cumulGood / (state.cumulGood + state.cumulBad) || 1;
   const mainTarget = state.targets[state.position];
 
   // characters per minute
   const cpm = (60000 * state.delay0) / state.delay1;
-  const mean1 = state.delay1 / state.delay0;
-  const mean2 = state.delay2 / state.delay0;
-  const variance = mean2 - mean1 * mean1;
-  const eqType = Math.sqrt(variance);
 
   return (
-    <>
-      <div>
-        Correctness:
-        {Object.is(errorRatio, NaN) ? 100 : Math.round(errorRatio * 100)}%
-      </div>
-      <div>
-        Speed: {Object.is(cpm, NaN) ? '--' : Math.round(cpm)} +-{' '}
-        {Object.is(eqType, NaN) ? '--' : Math.round(eqType)} characters / minute
-      </div>
+    <div
+      css={{
+        // fontFamily: 'Rubik',
+        fontFamily: 'Cantarell',
+        height: '100%',
+        padding: '10px',
+        backgroundColor: theme.colors.background,
+      }}
+    >
+      <Global styles={{ backgroundColor: 'red' }} />
       <div
         css={{
-          display: 'flex',
+          textColor: theme.colors.text,
         }}
       >
         <div
           css={{
+            fontSize: '16px',
             display: 'flex',
-            width: '200px',
             justifyContent: 'flex-end',
+            color: theme.colors.muted,
+            height: '100%',
+            textAlign: 'right',
           }}
         >
-          {state.targets.map(target =>
-            target.index < mainTarget?.index ? (
-              <div
+          <table>
+            <tr>
+              <td css={{ textAlign: 'right' }}>correctness</td>
+              <td
                 css={{
-                  color: 'grey',
+                  fontWeight: 'normal',
+                  width: '30px',
+                  color:
+                    errorRatio > ratioThreshold
+                      ? theme.colors.good
+                      : theme.colors.text,
+                  textAlign: 'center',
                 }}
-                key={target.index}
               >
-                {target.value}
-              </div>
-            ) : null,
-          )}
+                {Math.round(errorRatio * 100)}
+              </td>
+              <td css={{ textAlign: 'left' }}>%</td>
+            </tr>
+            <tr>
+              <td>speed</td>
+              <td css={{ color: theme.colors.text, textAlign: 'center' }}>
+                {Object.is(cpm, NaN) ? '\u2013' : Math.round(cpm)}
+              </td>
+              <td css={{ textAlign: 'left' }}>char / min</td>
+            </tr>
+          </table>
         </div>
         <div
           css={{
             display: 'flex',
-            color: state.erroneous
-              ? 'red'
-              : mainTarget?.firstTime
-              ? 'purple'
-              : 'blue',
-            width: '40px',
-            justifyContent: 'space-around',
+            flexDirection: 'column',
+            justifyContent: 'flex-end',
+            minHeight: '100%',
           }}
         >
-          {mainTarget?.value}
-        </div>
-        <div css={{ display: 'flex' }}>
-          {state.targets.map(target =>
-            target.index > mainTarget?.index ? (
+          <div
+            css={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+            }}
+          >
+            <TransitionGroup>
               <div
-                css={{ color: target.firstTime ? 'purple' : 'black' }}
-                key={target.index}
+                css={{
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  marginTop: '150px',
+                  borderBottomStyle: 'solid',
+                  borderWidth: '1px',
+                  paddingBottom: '10px',
+                  borderColor: theme.colors.muted,
+                  '& .character-exit': { opacity: 1 },
+                  '& .character-exit-active': {
+                    opacity: 0,
+                    transition: 'opacity 1000ms ease-in',
+                  },
+                }}
               >
-                {target.value}
+                <Pads amount={7 - state.targets.length} />
+                {state.targets.map(target => {
+                  let color = undefined;
+                  if (target.index === mainTarget?.index) {
+                    color = theme.colors.focus;
+                    if (state.erroneous) color = theme.colors.error;
+                  }
+                  if (target.index < mainTarget?.index) {
+                    color = theme.colors.muted;
+                  }
+                  if (target.firstTime) color = theme.colors.newLetter;
+                  return (
+                    <CSSTransition
+                      key={target.index}
+                      classNames='character'
+                      timeout={5000}
+                    >
+                      <div
+                        css={{
+                          color,
+                          width: '40px',
+                          textAlign: 'center',
+                          fontSize: '50px',
+                        }}
+                      >
+                        {target.value}
+                      </div>
+                    </CSSTransition>
+                  );
+                })}
               </div>
-            ) : null,
-          )}
+            </TransitionGroup>
+            <div
+              css={{ display: 'flex', paddingTop: '10px', fontSize: '20px' }}
+            >
+              <div css={{ color: theme.colors.good }}>{state.activeChars}</div>
+              <div css={{ color: theme.colors.muted }}>
+                {state.backstoreCharacters}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
 export default function App() {
   return (
-    <div css={{ fontSize: '40px' }} className='App'>
+    <div className='App'>
       <TypeZone />
     </div>
   );
