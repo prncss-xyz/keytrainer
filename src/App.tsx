@@ -3,7 +3,7 @@
 import useList from './components/list';
 import { ratioThreshold } from './components/constants';
 import { useTheme, Global } from '@emotion/react';
-import { TransitionGroup, CSSTransition } from 'react-transition-group';
+import { CSSTransition } from 'react-transition-group';
 
 const characters = 'etisuranovpdzlbjkmxhywf';
 
@@ -19,7 +19,7 @@ function TypeZone() {
 
   const [state] = useList(characters);
 
-  const errorRatio = state.cumulGood / (state.cumulGood + state.cumulBad) || 1;
+  const errorRatio = state.goodCumul / (state.goodCumul + state.badCumul) || 1;
   const mainTarget = state.targets[state.position];
 
   // characters per minute
@@ -88,7 +88,6 @@ function TypeZone() {
             flexDirection: 'column',
             justifyContent: 'flex-end',
             height: '52vh',
-            // minHeight: '100%',
           }}
         >
           <div
@@ -98,33 +97,14 @@ function TypeZone() {
               alignItems: 'center',
             }}
           >
-            <div // CSSTransition
+            <div
               css={{
                 display: 'flex',
                 justifyContent: 'flex-end',
-                // marginTop: '150px',
                 borderBottomStyle: 'solid',
                 borderWidth: '1px',
                 paddingBottom: '10px',
                 borderColor: theme.colors.muted,
-                '& .character-exit': {
-                  opacity: 1,
-                  transform: 'translate(0px, 0)',
-                },
-                '& .character-exit-active': {
-                  opacity: 0,
-                  transform: 'translate(-50px, 0)',
-                  transition: 'all 500ms ease-in',
-                },
-                '& .character-enter': {
-                  opacity: 0,
-                  transform: 'translate(50px, 0)',
-                },
-                '& .character-enter-active': {
-                  opacity: 1,
-                  transform: 'translate(0, 0)',
-                  transition: 'all 500ms ease-in',
-                },
               }}
             >
               <Pads amount={7 - state.targets.length} />
@@ -168,7 +148,7 @@ function TypeZone() {
             >
               {characters.split('').map(character => (
                 <CSSTransition
-                  in={character in state.easeMatrix}
+                  in={character in state.charStatsMatrix}
                   timeout={300}
                   key={character}
                   classNames='node'
@@ -178,7 +158,7 @@ function TypeZone() {
                       color: theme.colors.muted,
                       '& div': {
                         color:
-                          character in state.easeMatrix
+                          character in state.charStatsMatrix
                             ? theme.colors.good
                             : theme.colors.muted,
                       },

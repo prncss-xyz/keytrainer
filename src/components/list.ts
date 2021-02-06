@@ -1,70 +1,106 @@
-// TODO: add error to mistaken character
-// TODO: confusion matrix
-// TODO: change theme with new letter
-// TODO: animation
-// TODO: ? refactor algorithm as object
-
 import { useReducer, useEffect } from 'react';
 import {
   deprec,
-  deprecFrecency,
   countThreshold,
   ratioThreshold,
-  errFact,
   quick,
-  succFact,
   maxDelay,
+  baysianDeprec,
+  sinceNewHeadThreshold,
+  errBias,
+  coResp,
+  errRatio,
+  succRatio,
+  charactersBefore,
+  maxChartersDisplayed,
 } from './constants';
-
-const charactersBefore = 3;
-const maxChartersDisplayed = 2 * charactersBefore + 1;
-
-const factor = Math.LN2 / deprec;
-const factorFrecency = Math.LN2 / deprecFrecency;
 
 const interpol = (p1: number, v1: number, p2: number, v2: number, p: number) =>
   ((p - p1) / (p2 - p1)) * (v2 - v1) + v1;
 
-const calcFact = (delay: number, mean: number) => {
-  if (delay < quick) return succFact;
-  if (delay < mean / 5) return succFact;
-  if (delay < mean) return interpol(mean / 5, succFact, mean, 1, delay);
-  if (delay < 4 * mean) return interpol(mean, 1, 2 * mean, errFact, delay);
-  return errFact;
+const errorFact = (delay: number, mean: number) => {
+  if (delay < quick) return 0;
+  if (delay < mean * errRatio) return 0;
+  if (delay < mean) return interpol(mean * errRatio, 0, mean, 0.5, delay);
+  if (delay < mean * succRatio)
+    return interpol(mean, 0.5, mean * succRatio, 1, delay);
+  return 1;
 };
+
+interface CharStats {
+  errorCumul: number;
+  succCumul: number;
+  confusionMatrix: { [character: string]: number };
+}
 
 interface PreTarget {
   value: string;
   firstTime: boolean;
 }
-
-interface CharMatrix {
-  [character: string]: number;
-}
-
 type Target = {
   index: number;
 } & PreTarget;
 
 interface State {
-  count: number;
-  targets: Target[];
-  position: number;
-  erroneous: boolean;
-  cumulBad: number;
-  cumulGood: number;
-  countGood: number;
-  backstoreCharacters: string;
-  completed: boolean;
-  lastPressTime?: number;
-  delay0: number;
-  delay1: number;
-  delay2: number;
-  lastChar: string;
-  activeChars: string;
-  easeMatrix: CharMatrix;
-  frecencyMatrix: CharMatrix;
-  probMatrix: CharMatrix; // debugging purpose only
+  completed: boolean; // standards have been met with last character
+  targets: Target[]; // character instances to be typed
+  position: number; // index within targets of character expected to be pressed
+  erroneous: boolean; // true if last press event was erroneous
+  goodCumul: number; // weighted number of success, any character
+  badCumul: number; // weighted number of errors, any character
+  headGoodCount: number; // number of success with lastly added character
+  sinceNewHeadCount: number; // number of success since lastly added character
+  backstoreCharacters: string[]; // characters that are not active yet, in order
+  lastPressTime?: number; // time of the last press event
+  delay0: number; // weighted number of registered events, will equal goodCumul + badCumul
+  delay1: number; // weighted sum of events' delay
+  delay2: number; // weighted sum of square of events' delay
+  head: string; // lastly added character
+  charStatsMatrix: { [character: string]: CharStats };
+}
+
+// draw a character with a flat distribution
+function drawFlatChar(state: State): string {
+  let pick = Math.random() * (Object.keys(state.charStatsMatrix).length - 1);
+  let key;
+  for (const key0 of Object.keys(state.charStatsMatrix)) {
+    key = key0;
+    if (key === state.targets[state.targets.length - 1]?.value) continue;
+    pick -= 1;
+    if (pick <= 0) return key;
+  }
+  if (!key) throw new Error('Expected non void selection.');
+  return key;
+}
+
+function drawBaysianChar(state: State): string {
+  let total = 0;
+  for (const [key, charStats] of Object.entries(state.charStatsMatrix)) {
+    if (key === state.targets[state.targets.length - 1]?.value) continue;
+    total +=
+      charStats.errorCumul / (charStats.errorCumul + charStats.succCumul);
+  }
+  let pick = Math.random() * total;
+  let key;
+  for (const [key0, charStats] of Object.entries(state.charStatsMatrix)) {
+    key = key0;
+    if (key === state.targets[state.targets.length - 1]?.value) continue;
+    pick -= charStats.errorCumul / (charStats.errorCumul + charStats.succCumul);
+    if (pick <= 0) return key;
+  }
+  return key || drawFlatChar(state);
+}
+
+// draw a character from active characters, THE algorith
+function drawChar(state: State): string {
+  if (
+    state.headGoodCount < countThreshold &&
+    state.targets[state.targets.length - 1]?.value !== state.head &&
+    Math.random() < 0.2
+  )
+    return state.head;
+  if (Math.random() < 0.05) return drawFlatChar(state);
+  return drawBaysianChar(state);
 }
 
 export const press = (key: string, timeStamp: number) =>
@@ -73,38 +109,41 @@ export const newChar = (key: string) => ({ type: 'NEW_CHAR', key } as const);
 
 type Action = ReturnType<typeof press> | ReturnType<typeof newChar>;
 
+// adds a character instance to the typing flow
 function newTarget(state: State, target: PreTarget): State {
-  let targets = state.targets.concat([{ ...target, index: state.count }]);
+  const index = state.targets[state.targets.length - 1]?.index + 1 || 0;
+  let targets = state.targets.concat([{ ...target, index }]);
   let position = state.position;
-  const increment = Math.exp(factorFrecency * state.count);
-  const frecency = state.frecencyMatrix[target.value] + increment;
-  const frecencyMatrix = { ...state.frecencyMatrix, [target.value]: frecency };
   if (targets.length > maxChartersDisplayed) {
     position -= 1;
     targets = targets.slice(1);
   }
   return {
     ...state,
-    frecencyMatrix,
     position,
     targets,
-    count: state.count + 1,
   };
 }
 
+// adds a character type to active set
 function newCharacter(state: State): State {
-  const total = Object.values(state.easeMatrix).reduce((a, b) => a + b, 0);
   const head = state.backstoreCharacters[0];
   if (!head) return { ...state, completed: true };
   return newTarget(
     {
       ...state,
-      activeChars: state.activeChars + head,
-      lastChar: head,
-      easeMatrix: { ...state.easeMatrix, [head]: total / 2 },
-      frecencyMatrix: { ...state.frecencyMatrix, [head]: 0 },
+      head: head,
       backstoreCharacters: state.backstoreCharacters.slice(1),
-      countGood: 0,
+      sinceNewHeadCount: 0,
+      headGoodCount: 0,
+      charStatsMatrix: {
+        ...state.charStatsMatrix,
+        [head]: {
+          errorCumul: 0,
+          succCumul: 0,
+          confusionMatrix: {},
+        },
+      },
     },
     {
       value: head,
@@ -113,67 +152,85 @@ function newCharacter(state: State): State {
   );
 }
 
+function registerCharacterPress(
+  state: State,
+  target: Target,
+  pressed: string,
+  delay: number,
+): State {
+  const stateOut = { ...state };
+  const increment = Math.exp((Math.LN2 / deprec) * target.index);
+  stateOut.delay0 += increment;
+  stateOut.delay1 += increment * delay;
+  stateOut.delay2 += increment * delay * delay;
+  const fact = Math.pow(2, -1 / baysianDeprec);
+
+  const char = target.value;
+
+  if (stateOut.erroneous) {
+    stateOut.badCumul = state.badCumul + increment;
+    const r = 0.3;
+    if (pressed in stateOut.charStatsMatrix) {
+      stateOut.charStatsMatrix[char].errorCumul =
+        stateOut.charStatsMatrix[char].errorCumul * fact +
+        (1 - fact) * (1 - coResp);
+      stateOut.charStatsMatrix[pressed].errorCumul =
+        stateOut.charStatsMatrix[pressed].errorCumul * fact +
+        (1 - fact) * coResp;
+      return stateOut;
+    }
+    stateOut.charStatsMatrix[char].errorCumul =
+      stateOut.charStatsMatrix[char].errorCumul * fact + (1 - fact);
+    return stateOut;
+  }
+
+  stateOut.goodCumul = state.goodCumul + increment;
+  stateOut.charStatsMatrix[char].errorCumul =
+    stateOut.charStatsMatrix[char].errorCumul * fact +
+    (1 - fact) * errorFact(stateOut.delay1 / stateOut.delay0, delay);
+  stateOut.charStatsMatrix[char].succCumul =
+    stateOut.charStatsMatrix[char].succCumul * fact +
+    ((1 - fact) * (1 - errorFact(stateOut.delay1 / stateOut.delay0, delay))) /
+      errBias;
+  return stateOut;
+}
+
 function reducer(state: State, action: Action): State {
   switch (action.type) {
     case 'PRESS': {
-      const target = state.targets[state.position];
-      if (!target) return state;
-      const increment = Math.exp(factor * target.index);
-      const stateOut = { ...state };
-      stateOut.probMatrix = calcProb(state);
+      let stateOut = { ...state };
       stateOut.lastPressTime = action.timeStamp;
-      stateOut.erroneous = state.targets[state.position].value !== action.key;
-      if (!stateOut.erroneous) stateOut.position += 1;
-
+      const target = state.targets[state.position];
+      if (!target) throw new Error('target must not be empty when key pressed');
+      stateOut.erroneous = target.value !== action.key;
+      if (!stateOut.erroneous) ++stateOut.position;
       if (!state.erroneous && state.lastPressTime) {
         const delay = action.timeStamp - state.lastPressTime;
         if (delay > maxDelay) return stateOut;
-        stateOut.delay0 += increment;
-        stateOut.delay1 += increment * delay;
-        stateOut.delay2 += increment * delay * delay;
-        let ease = state.easeMatrix[target.value];
-        if (stateOut.erroneous) ease *= errFact;
-        else {
-          // ease *= succFact;
-          ease *= calcFact(delay, stateOut.delay1 / stateOut.delay0);
-        }
-        const total = Object.values(state.easeMatrix).reduce(
-          (a, b) => a + b,
-          0,
-        );
-        const len = Object.values(state.easeMatrix).length;
-        Math.min(ease, 0.8 * total);
-        Math.max(ease, (0.1 / len) * total);
-        if (
-          target.value === state.lastChar &&
-          state.countGood < countThreshold
-        ) {
-          ease = total / 4;
-        }
-        // ease = Math.max(ease, total * 0.01);
-        // entry cannot exceed 50% frequency
-        // ease = Math.min(ease, total - state.easeMatrix[action.key]);
-        stateOut.easeMatrix = { ...state.easeMatrix, [target.value]: ease };
-        // for (const k of Object.keys(stateOut.easeMatrix)) {
-        //   stateOut.easeMatrix[k] /= total;
-        // }
-
-        if (stateOut.erroneous) {
-          stateOut.cumulBad = state.cumulBad + increment;
-          return stateOut;
-        }
-        stateOut.erroneous = false;
-        stateOut.cumulGood = state.cumulGood + increment;
-        if (target.value === state.lastChar)
-          stateOut.countGood = state.countGood + 1;
-        const succRatio =
-          stateOut.cumulGood / (stateOut.cumulGood + stateOut.cumulBad);
-        if (
-          (succRatio > ratioThreshold && stateOut.countGood > countThreshold) ||
-          (succRatio > 0.98 && stateOut.countGood > 3) ||
-          (succRatio > 0.99 && stateOut.countGood > 2)
-        ) {
-          return newCharacter(stateOut);
+        stateOut = registerCharacterPress(stateOut, target, action.key, delay);
+        if (!state.erroneous) {
+          ++stateOut.sinceNewHeadCount;
+          if (target.value === state.head) {
+            ++stateOut.headGoodCount;
+            const succRatio =
+              stateOut.goodCumul / (stateOut.goodCumul + stateOut.badCumul);
+            if (
+              Object.keys(stateOut.charStatsMatrix).length === 1 ||
+              (succRatio > ratioThreshold &&
+                stateOut.sinceNewHeadCount > sinceNewHeadThreshold)
+            ) {
+              const goodThreshold = interpol(
+                ratioThreshold,
+                countThreshold,
+                0.995,
+                1,
+                succRatio,
+              );
+              if (stateOut.headGoodCount >= goodThreshold) {
+                return newCharacter(stateOut);
+              }
+            }
+          }
         }
       }
       return stateOut;
@@ -187,64 +244,30 @@ function reducer(state: State, action: Action): State {
   }
 }
 
-function newTargetValue(state: State) {
-  const last = state.targets[state.targets.length - 1]?.value;
-  const weight = (key: string) =>
-    key === last ? 0 : state.easeMatrix[key] / state.frecencyMatrix[key];
-  const total = Object.keys(state.easeMatrix)
-    .map(key => weight(key))
-    .reduce((a, b) => a + b, 0);
-  const pick = Math.random() * total;
-  let character: string;
-  let cumul = 0;
-  for (const key of Object.keys(state.easeMatrix)) {
-    character = key;
-    cumul += weight(key);
-    if (cumul >= pick) break;
-  }
-  return character!;
-}
-
-function calcProb(state: State): CharMatrix {
-  const weight = (key: string) =>
-    state.easeMatrix[key] / state.frecencyMatrix[key];
-  const total = Object.keys(state.easeMatrix)
-    .map(key => weight(key))
-    .reduce((a, b) => a + b, 0);
-  const probs: CharMatrix = {};
-  for (const key of Object.keys(state.easeMatrix)) {
-    probs[key] = weight(key) / total;
-  }
-  return probs;
-}
-
 export default function useList(characters: string) {
-  const backstoreCharacters = characters.slice(2);
-  const state0: State = {
-    count: 0,
+  let state0: State = {
     targets: [],
     position: 0,
     erroneous: false,
-    cumulBad: 0,
-    cumulGood: 0,
-    countGood: 0,
-    backstoreCharacters,
+    badCumul: 0,
+    goodCumul: 0,
+    sinceNewHeadCount: 0,
+    headGoodCount: 0,
+    backstoreCharacters: characters.split(''),
     completed: false,
     delay0: 0,
     delay1: 0,
     delay2: 0,
-    activeChars: characters.slice(0, 2),
-    lastChar: characters[1],
-    easeMatrix: {
-      [characters[0]]: 0.5,
-      [characters[1]]: 0.5,
-    },
-    frecencyMatrix: {
-      [characters[0]]: 1,
-      [characters[1]]: 1,
-    },
-    probMatrix: {},
+    head: '',
+    charStatsMatrix: {},
   };
+  state0 = newCharacter(state0);
+  while (state0.targets.length < charactersBefore + 1) {
+    state0 = newTarget(state0, {
+      value: drawChar(state0),
+      firstTime: false,
+    });
+  }
 
   const [state, dispatch] = useReducer(reducer, state0);
 
@@ -260,7 +283,7 @@ export default function useList(characters: string) {
 
   useEffect(() => {
     if (state.targets.length - state.position - 1 < charactersBefore) {
-      dispatch(newChar(newTargetValue(state)));
+      dispatch(newChar(drawChar(state)));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dispatch, state.targets.length, state.position]);

@@ -9,22 +9,36 @@
 
 ## Transition
 
-color and size transition when new letter arrives
+mouvement des lettres
 
 ## Theming
 
-change theme elements every few letters (mainly backgroud motifs)
+change theme elements every few letters (mainly background motifs)
+espacer plus les caractères
+l'oeil tend à suivre la nouvelle lettre quand elle passe la cible
 
 ## Bugs
 
 Find why emotion Global is not working
 
-## Algorythm
-
-maximum values of ease factors
-
-minimum values of ease factors
+## Algorithm
 
 confusion matrix
 
-- how does it deprecate?
+use variance of delai
+
+## Gadgets
+
+I'm not a robot / captcha
+
+1. rounded frame with picture of cat in space with keyboard or dactylo appears in a venitain curtains effect
+2. frame starts spinning slowly, accelerates
+3. when full speed, frame scales up and disappears (opacitiy 0)
+
+"banjo intensifies", oldschool subtible style
+
+psychedelic patterns
+
+hix hecs
+
+soultrain
