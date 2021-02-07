@@ -8,22 +8,30 @@ import {
   baysianDeprec,
   sinceNewHeadThreshold,
   errBias,
-  coResp,
+  // coResp,
   errRatio,
   succRatio,
   charactersBefore,
   maxChartersDisplayed,
+  errSkew,
+  // confusionDeprec,
+  baysianExponent,
 } from './constants';
+
+type Immutable<T> = {
+  readonly [K in keyof T]: Immutable<T[K]>;
+};
 
 const interpol = (p1: number, v1: number, p2: number, v2: number, p: number) =>
   ((p - p1) / (p2 - p1)) * (v2 - v1) + v1;
 
-const errorFact = (delay: number, mean: number) => {
+const calcErrorFact = (mean: number, eqt: number, delay: number) => {
+  return 0;
   if (delay < quick) return 0;
-  if (delay < mean * errRatio) return 0;
-  if (delay < mean) return interpol(mean * errRatio, 0, mean, 0.5, delay);
-  if (delay < mean * succRatio)
-    return interpol(mean, 0.5, mean * succRatio, 1, delay);
+  if (delay < mean * succRatio) return 0;
+  if (delay < mean) return interpol(mean * succRatio, 0, mean, errSkew, delay);
+  if (delay < mean * errRatio)
+    return interpol(mean, errSkew, mean * errRatio, 1, delay);
   return 1;
 };
 
@@ -59,8 +67,15 @@ interface State {
   charStatsMatrix: { [character: string]: CharStats };
 }
 
+const cloneState = (state: Immutable<State>): State => ({
+  ...state,
+  targets: [...state.targets],
+  charStatsMatrix: { ...state.charStatsMatrix },
+  backstoreCharacters: [...state.backstoreCharacters],
+});
+
 // draw a character with a flat distribution
-function drawFlatChar(state: State): string {
+function drawFlatChar(state: Immutable<State>): string {
   let pick = Math.random() * (Object.keys(state.charStatsMatrix).length - 1);
   let key;
   for (const key0 of Object.keys(state.charStatsMatrix)) {
@@ -73,26 +88,30 @@ function drawFlatChar(state: State): string {
   return key;
 }
 
-function drawBaysianChar(state: State): string {
+function drawBaysianChar(state: Immutable<State>): string {
+  const weight = (charStats: CharStats) =>
+    Math.pow(
+      charStats.errorCumul / (charStats.errorCumul + charStats.succCumul),
+      baysianExponent,
+    );
   let total = 0;
   for (const [key, charStats] of Object.entries(state.charStatsMatrix)) {
     if (key === state.targets[state.targets.length - 1]?.value) continue;
-    total +=
-      charStats.errorCumul / (charStats.errorCumul + charStats.succCumul);
+    total += weight(charStats);
   }
   let pick = Math.random() * total;
   let key;
   for (const [key0, charStats] of Object.entries(state.charStatsMatrix)) {
     key = key0;
     if (key === state.targets[state.targets.length - 1]?.value) continue;
-    pick -= charStats.errorCumul / (charStats.errorCumul + charStats.succCumul);
+    pick -= weight(charStats);
     if (pick <= 0) return key;
   }
   return key || drawFlatChar(state);
 }
 
 // draw a character from active characters, THE algorith
-function drawChar(state: State): string {
+function drawChar(state: Immutable<State>): string {
   if (
     state.headGoodCount < countThreshold &&
     state.targets[state.targets.length - 1]?.value !== state.head &&
@@ -110,46 +129,37 @@ export const newChar = (key: string) => ({ type: 'NEW_CHAR', key } as const);
 type Action = ReturnType<typeof press> | ReturnType<typeof newChar>;
 
 // adds a character instance to the typing flow
-function newTarget(state: State, target: PreTarget): State {
+function newTarget(state: Immutable<State>, target: PreTarget): State {
+  const stateOut = cloneState(state);
   const index = state.targets[state.targets.length - 1]?.index + 1 || 0;
-  let targets = state.targets.concat([{ ...target, index }]);
-  let position = state.position;
-  if (targets.length > maxChartersDisplayed) {
-    position -= 1;
-    targets = targets.slice(1);
+  stateOut.targets.push({ ...target, index });
+  if (stateOut.targets.length > maxChartersDisplayed) {
+    stateOut.position -= 1;
+    stateOut.targets = stateOut.targets.slice(1);
   }
-  return {
-    ...state,
-    position,
-    targets,
-  };
+  return stateOut;
 }
 
 // adds a character type to active set
-function newCharacter(state: State): State {
-  const head = state.backstoreCharacters[0];
-  if (!head) return { ...state, completed: true };
-  return newTarget(
-    {
-      ...state,
-      head: head,
-      backstoreCharacters: state.backstoreCharacters.slice(1),
-      sinceNewHeadCount: 0,
-      headGoodCount: 0,
-      charStatsMatrix: {
-        ...state.charStatsMatrix,
-        [head]: {
-          errorCumul: 0,
-          succCumul: 0,
-          confusionMatrix: {},
-        },
-      },
-    },
-    {
-      value: head,
-      firstTime: true,
-    },
-  );
+function newCharacter(state: Immutable<State>): State {
+  const stateOut = cloneState(state);
+  stateOut.head = state.backstoreCharacters[0];
+  if (!stateOut.head) {
+    stateOut.completed = true;
+    return stateOut;
+  }
+  stateOut.backstoreCharacters.shift();
+  stateOut.sinceNewHeadCount = 0;
+  stateOut.headGoodCount = 0;
+  stateOut.charStatsMatrix[stateOut.head] = {
+    errorCumul: 1,
+    succCumul: 0,
+    confusionMatrix: {},
+  };
+  return newTarget(stateOut, {
+    value: stateOut.head,
+    firstTime: true,
+  });
 }
 
 function registerCharacterPress(
@@ -158,47 +168,62 @@ function registerCharacterPress(
   pressed: string,
   delay: number,
 ): State {
-  const stateOut = { ...state };
   const increment = Math.exp((Math.LN2 / deprec) * target.index);
-  stateOut.delay0 += increment;
-  stateOut.delay1 += increment * delay;
-  stateOut.delay2 += increment * delay * delay;
+  state.delay0 += increment;
+  state.delay1 += increment * delay;
+  state.delay2 += increment * delay * delay;
   const fact = Math.pow(2, -1 / baysianDeprec);
 
   const char = target.value;
 
-  if (stateOut.erroneous) {
-    stateOut.badCumul = state.badCumul + increment;
-    const r = 0.3;
-    if (pressed in stateOut.charStatsMatrix) {
-      stateOut.charStatsMatrix[char].errorCumul =
-        stateOut.charStatsMatrix[char].errorCumul * fact +
-        (1 - fact) * (1 - coResp);
-      stateOut.charStatsMatrix[pressed].errorCumul =
-        stateOut.charStatsMatrix[pressed].errorCumul * fact +
-        (1 - fact) * coResp;
-      return stateOut;
-    }
-    stateOut.charStatsMatrix[char].errorCumul =
-      stateOut.charStatsMatrix[char].errorCumul * fact + (1 - fact);
-    return stateOut;
+  if (state.erroneous) {
+    state.badCumul += increment;
+    // if (pressed in stateOut.charStatsMatrix) {
+    //   stateOut.charStatsMatrix[char].errorCumul =
+    //     stateOut.charStatsMatrix[char].errorCumul * fact +
+    //     (1 - fact) * (1 - coResp);
+    //   stateOut.charStatsMatrix[pressed] = {
+    //     ...stateOut.charStatsMatrix[pressed],
+    //   };
+    //   stateOut.charStatsMatrix[pressed].errorCumul =
+    //     stateOut.charStatsMatrix[pressed].errorCumul * fact +
+    //     (1 - fact) * coResp;
+
+    //   stateOut.charStatsMatrix[char].confusionMatrix = {
+    //     ...stateOut.charStatsMatrix[char].confusionMatrix,
+    //   };
+    //   stateOut.charStatsMatrix[char].confusionMatrix[pressed] =
+    //     stateOut.charStatsMatrix[char].confusionMatrix[pressed] || 0;
+    //   stateOut.charStatsMatrix[char].confusionMatrix[pressed] += Math.exp(
+    //     (Math.LN2 / confusionDeprec) * target.index,
+    //   );
+    //   return stateOut;
+    // }
+    state.charStatsMatrix[char].errorCumul =
+      state.charStatsMatrix[char].errorCumul * fact + (1 - fact);
+    return state;
   }
 
-  stateOut.goodCumul = state.goodCumul + increment;
-  stateOut.charStatsMatrix[char].errorCumul =
-    stateOut.charStatsMatrix[char].errorCumul * fact +
-    (1 - fact) * errorFact(stateOut.delay1 / stateOut.delay0, delay);
-  stateOut.charStatsMatrix[char].succCumul =
-    stateOut.charStatsMatrix[char].succCumul * fact +
-    ((1 - fact) * (1 - errorFact(stateOut.delay1 / stateOut.delay0, delay))) /
-      errBias;
-  return stateOut;
+  const eqt = Math.sqrt(
+    (state.delay2 - (state.delay1 * state.delay1) / state.delay0) /
+      state.delay0,
+  );
+  const mean = state.delay1 / state.delay0;
+  const errorFact = calcErrorFact(mean, eqt, delay);
+
+  state.goodCumul = state.goodCumul + increment;
+  state.charStatsMatrix[char].errorCumul =
+    state.charStatsMatrix[char].errorCumul * fact + (1 - fact) * errorFact;
+  state.charStatsMatrix[char].succCumul =
+    state.charStatsMatrix[char].succCumul * fact +
+    ((1 - fact) * (1 - errorFact)) / errBias;
+  return state;
 }
 
-function reducer(state: State, action: Action): State {
+function reducer(state: Immutable<State>, action: Action): State {
   switch (action.type) {
     case 'PRESS': {
-      let stateOut = { ...state };
+      const stateOut = cloneState(state);
       stateOut.lastPressTime = action.timeStamp;
       const target = state.targets[state.position];
       if (!target) throw new Error('target must not be empty when key pressed');
@@ -207,7 +232,7 @@ function reducer(state: State, action: Action): State {
       if (!state.erroneous && state.lastPressTime) {
         const delay = action.timeStamp - state.lastPressTime;
         if (delay > maxDelay) return stateOut;
-        stateOut = registerCharacterPress(stateOut, target, action.key, delay);
+        registerCharacterPress(stateOut, target, action.key, delay);
         if (!state.erroneous) {
           ++stateOut.sinceNewHeadCount;
           if (target.value === state.head) {

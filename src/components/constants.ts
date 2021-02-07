@@ -12,11 +12,11 @@ export const maxChartersDisplayed = 2 * charactersBefore + 1;
 // regardless of average delay
 export const quick = 500;
 
-// ratio to mean delai below which press event counts as a full success
-export const errRatio = 0.2;
+// number of standard deviation above mean for delay to qualify as full error
+export const errRatio = 8;
 
-// ratio to mean delai above which press event counts as a full error
-export const succRatio = 4;
+// number of standard deviation below mean for delay to qualify as full success
+export const succRatio = 2;
 
 // delai (ms) above which press event is discarded
 export const maxDelay = 10000;
@@ -37,12 +37,18 @@ export const sinceNewHeadThreshold = 7;
 
 // number of events (related to the same letter) to have passed for a given event's
 // influence to half, as used in the baysian algorith
-export const baysianDeprec = 5;
+export const baysianDeprec = 20;
 
 // number of success necessary to compensate an error, assuming there is
 // no deprecation
-export const errBias = 3;
+export const errBias = 8;
 
 // when the wrong type is in the leaning range,
 // part of the error which is transferred to the accidental range
-export const coResp = 0.3;
+export const coResp = 0;
+
+export const errSkew = 0.05;
+
+export const confusionDeprec = baysianDeprec;
+
+export const baysianExponent = 3;
