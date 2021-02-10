@@ -4,7 +4,9 @@
     "cumul",
     "deprec",
     "frecency",
-    "succ"
+    "rfdc",
+    "succ",
+    "unrepeat"
   ],
   "cSpell.ignoreWords": [
     "etisuranovpdzlbjkmxhywf",
