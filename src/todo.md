@@ -13,6 +13,8 @@ mouvement des lettres
 
 ## Theming
 
+monospace font
+
 change theme elements every few letters (mainly background motifs)
 espacer plus les caractères
 l'oeil tend à suivre la nouvelle lettre quand elle passe la cible

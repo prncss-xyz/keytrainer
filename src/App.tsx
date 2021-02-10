@@ -193,8 +193,6 @@ export default function App() {
           html: { height: '100%' },
           '#root': { height: '100%' },
           body: {
-            // height: '100%',
-            // fontFamily: 'Rubik',
             margin: '20px',
             fontFamily: 'Cantarell',
             padding: '10px',

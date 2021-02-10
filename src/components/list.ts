@@ -267,13 +267,5 @@ export default function useList(characters: string) {
     }
   };
 
-  // return [state];
-
-  // const keyDownHandler: React.KeyboardEventHandler = event => {
-  //   const { key, timeStamp } = event;
-  //   event.preventDefault();
-  //   keyDown(key, timeStamp);
-  // };
-
   return [state, sendKey] as [State, typeof sendKey];
 }
