@@ -1,5 +1,4 @@
 // display constants
-
 export const charactersBefore = 3;
 export const maxChartersDisplayed = 2 * charactersBefore + 1;
 

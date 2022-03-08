@@ -1,4 +1,8 @@
 import { useReducer, useEffect } from 'react';
+
+import rfdc from 'rfdc';
+
+// see source for definitions
 import {
   ratioThreshold,
   maxDelay,
@@ -10,8 +14,6 @@ import {
   charSuccessHalfLife,
   headGoodThreshold,
 } from './constants';
-
-import rfdc from 'rfdc';
 
 const clone = rfdc();
 
@@ -92,8 +94,9 @@ function drawTarget(state: Immutable<State>, seed: number): string {
     seed > 0.8
   )
     return state.head;
-  seed /= 0.8;
-  if (Math.random() > 0.95) return drawFlatTarget(state, seed / 0.95);
+  // seed /= 0.8;
+  // if (Math.random() > 0.95)
+  // return drawFlatTarget(state, seed / 0.95);
   return drawWeightedTarget(state, seed / 0.95);
 }
 

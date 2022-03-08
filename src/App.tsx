@@ -6,7 +6,7 @@ import { useTheme, Global } from '@emotion/react';
 import { useEffect } from 'react';
 import { CSSTransition } from 'react-transition-group';
 
-const characters = 'etisuranovpdzlbjkmxgyqwfhc, ';
+const characters = process.env.REACT_APP_CHARACTERS || 'asdfghjkl;qwertyuiopzxcvbnm'
 
 function Pads({ amount }: { amount: number }) {
   const res = [];
