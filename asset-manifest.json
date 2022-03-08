@@ -1,0 +1,17 @@
+{
+  "files": {
+    "main.js": "/keytrainer/static/js/main.b332d74f.chunk.js",
+    "main.js.map": "/keytrainer/static/js/main.b332d74f.chunk.js.map",
+    "runtime-main.js": "/keytrainer/static/js/runtime-main.0b1f7aee.js",
+    "runtime-main.js.map": "/keytrainer/static/js/runtime-main.0b1f7aee.js.map",
+    "static/js/2.6c534db0.chunk.js": "/keytrainer/static/js/2.6c534db0.chunk.js",
+    "static/js/2.6c534db0.chunk.js.map": "/keytrainer/static/js/2.6c534db0.chunk.js.map",
+    "index.html": "/keytrainer/index.html",
+    "static/js/2.6c534db0.chunk.js.LICENSE.txt": "/keytrainer/static/js/2.6c534db0.chunk.js.LICENSE.txt"
+  },
+  "entrypoints": [
+    "static/js/runtime-main.0b1f7aee.js",
+    "static/js/2.6c534db0.chunk.js",
+    "static/js/main.b332d74f.chunk.js"
+  ]
+}
